@@ -2,6 +2,7 @@ package com.ryanheise.just_audio;
 
 import android.os.Handler;
 import com.google.android.exoplayer2.C;
+import com.google.android.exoplayer2.ExoPlaybackException;
 import com.google.android.exoplayer2.Player;
 import com.google.android.exoplayer2.PlaybackParameters;
 import com.google.android.exoplayer2.SimpleExoPlayer;
@@ -27,6 +28,7 @@ import java.util.Arrays;
 import java.util.LinkedList;
 import android.content.Context;
 import android.net.Uri;
+// import android.util.Log;
 import java.util.List;
 
 public class AudioPlayer implements MethodCallHandler, Player.EventListener {
@@ -107,6 +109,43 @@ public class AudioPlayer implements MethodCallHandler, Player.EventListener {
 			broadcastPlaybackEvent();
 		}
 	}
+
+    @Override
+    public void onPlayerError(ExoPlaybackException error) {
+		buffering = false;
+		transition(PlaybackState.error);
+
+	//    switch (error.type) {
+	//      case ExoPlaybackException.TYPE_SOURCE:
+	//        Log.e("just_audio AudioPlayer", "TYPE_SOURCE: " + error.getSourceException().getMessage());
+	//        break;
+	//      case ExoPlaybackException.TYPE_RENDERER:
+	//        Log.e("just_audio AudioPlayer", "TYPE_RENDERER: " + error.getRendererException().getMessage());
+	//        break;
+	//      case ExoPlaybackException.TYPE_UNEXPECTED:
+	//        Log.e("just_audio AudioPlayer", "TYPE_UNEXPECTED: " + error.getUnexpectedException().getMessage());
+	//        break;
+	//    }
+
+	// if (error.type == ExoPlaybackException.TYPE_SOURCE) {
+	//   IOException cause = error.getSourceException();
+	//   if (cause instanceof HttpDataSourceException) {
+	//     // An HTTP error occurred.
+	//     HttpDataSourceException httpError = (HttpDataSourceException) cause;
+	//     // This is the request for which the error occurred.
+	//     DataSpec requestDataSpec = httpError.dataSpec;
+	//     // It's possible to find out more about the error both by casting and by
+	//     // querying the cause.
+	//     if (httpError instanceof HttpDataSource.InvalidResponseCodeException) {
+	//       // Cast to InvalidResponseCodeException and retrieve the response code,
+	//       // message and headers.
+	//     } else {
+	//       // Try calling httpError.getCause() to retrieve the underlying cause,
+	//       // although note that it may be null.
+	//     }
+	//   }
+	// }
+	 }
 
 	@Override
 	public void onSeekProcessed() {
@@ -345,6 +384,7 @@ public class AudioPlayer implements MethodCallHandler, Player.EventListener {
 
 	enum PlaybackState {
 		none,
+		error,
 		stopped,
 		paused,
 		playing,
