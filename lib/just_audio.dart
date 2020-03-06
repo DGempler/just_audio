@@ -375,6 +375,7 @@ class AudioPlaybackEvent {
 /// Enumerates the different playback states of a player.
 enum AudioPlaybackState {
   none,
+  error,
   stopped,
   paused,
   playing,
