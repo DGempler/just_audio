@@ -8,6 +8,7 @@
 
 enum PlaybackState {
 	none,
+	error,
 	stopped,
 	paused,
 	playing,
