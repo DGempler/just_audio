@@ -98,6 +98,7 @@
 }
 
 - (void)checkForDiscontinuity {
+	NSLog(@"checkForDiscontinuity");
 	if (!_eventSink) return;
 	if ((_state != playing) && !_buffering) return;
 	long long now = (long long)([[NSDate date] timeIntervalSince1970] * 1000.0);
@@ -107,14 +108,42 @@
 	long long drift = position - expectedPosition;
 	// Update if we've drifted or just started observing
 	if (_updateTime == 0L) {
+		NSLog(@"checkForDiscontinuity just started observing");
 		[self broadcastPlaybackEvent];
 	} else if (drift < -100) {
-		NSLog(@"time discontinuity detected: %lld", drift);
-		_buffering = YES;
-		[self broadcastPlaybackEvent];
+		NSLog(@"checkForDiscontinuity time discontinuity detected: %lld", drift);
+		// original code
+		// _buffering = YES;
+		// [self broadcastPlaybackEvent];
+		// end original code
+
+		// new code
+		if (_seekPos == -1) {
+			NSLog(@"checkForDiscontinuity not seeking, assuming buffering is over and setting _buffering to NO");
+			_buffering = NO;
+			[self broadcastPlaybackEvent];
+		} else {
+			NSLog(@"checkForDiscontinuity seeking, setting _buffering to YES");
+			_buffering = YES;
+			[self broadcastPlaybackEvent];
+		}
+		// end new code
 	} else if (_buffering) {
-		_buffering = NO;
-		[self broadcastPlaybackEvent];
+		// new code
+		if (_seekPos == -1) {
+			NSLog(@"checkForDiscontinuity not seeking and _buffering is YES, setting _buffering to NO");
+			_buffering = NO;
+			[self broadcastPlaybackEvent];
+		} else {
+			NSLog(@"checkForDiscontinuity seeking and _buffering is YES, ignoring");
+		}
+		// end new code
+
+		// original code
+		// NSLog(@"checkForDiscontinuity - _buffering is YES - setting to buffering = NO, and _seekPos was: %d", _seekPos);
+		// _buffering = NO;
+		// [self broadcastPlaybackEvent];
+		// end original code
 	}
 }
 
@@ -161,9 +190,18 @@
 
 - (void)setUrl:(NSString*)url result:(FlutterResult)result {
 	// TODO: error if already connecting
+	NSLog(@"JustAudio setUrl, setting state to connecting. url: %@", url);
 	_connectionResult = result;
 	[self setPlaybackState:connecting];
+
+	// new code not indenting after
+	NSLog(@"JustAudio setUrl about to dispatch background thread for everything after setPlaybackState:connecting");
+	dispatch_async(dispatch_get_global_queue( DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^(void){
+		NSLog(@"JustAudio setUrl dispatching background thread for everything after setPlaybackState:connecting");
+	// end new code
+
 	if (_player) {
+		NSLog(@"_player exists");
 		[[_player currentItem] removeObserver:self forKeyPath:@"status"];
         if (@available(iOS 10.0, *)) {[_player removeObserver:self forKeyPath:@"timeControlStatus"];}
 		[[NSNotificationCenter defaultCenter] removeObserver:_endObserver];
@@ -194,16 +232,32 @@
 			}
 	];
 	if (_player) {
-		[_player replaceCurrentItemWithPlayerItem:playerItem];
+		// new code
+		NSLog(@"_player exists, calling replaceCurrentItemWithPlayerItem");
+		//Dispatch to background Thread to prevent blocking UI
+		// dispatch_async(dispatch_get_global_queue( DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^(void){
+			// NSLog(@"JustAudio setUrl dispatching background thread for replaceCurrentItemWithPlayerItem");
+			[_player replaceCurrentItemWithPlayerItem:playerItem];
+			NSLog(@"JustAudio setUrl done replaceCurrentItemWithPlayerItem");
+		// });
+		// end new code
+
+		// original code
+		// [_player replaceCurrentItemWithPlayerItem:playerItem];
+		// end original code
 	} else {
+		NSLog(@"_player didn't exist, calling initWithPlayerItem");
 		_player = [[AVPlayer alloc] initWithPlayerItem:playerItem];
 	}
 	if (_timeObserver) {
+		NSLog(@"removing _timeObserver");
 		[_player removeTimeObserver:_timeObserver];
 		_timeObserver = 0;
 	}
 	if (@available(iOS 10.0, *)) {
+		NSLog(@"automaticallyWaitsToMinimizeStalling available");
 		_player.automaticallyWaitsToMinimizeStalling = _automaticallyWaitsToMinimizeStalling;
+		NSLog(@"adding timeControlStatus listener");
         [_player addObserver:self
         forKeyPath:@"timeControlStatus"
            options:NSKeyValueObservingOptionNew
@@ -213,6 +267,7 @@
 	//__weak __typeof__(self) weakSelf = self;
 	//typeof(self) __weak weakSelf = self;
 	__unsafe_unretained typeof(self) weakSelf = self;
+	NSLog(@"adding addPeriodicTimeObserverForInterval");
 	_timeObserver = [_player addPeriodicTimeObserverForInterval:CMTimeMake(200, 1000)
 		queue:nil
 		usingBlock:^(CMTime time) {
@@ -220,6 +275,11 @@
 		}
 	];
 	// We send result after the playerItem is ready in observeValueForKeyPath.
+
+	// new code not indentend before
+	});
+	// end new code
+
 }
 
 - (void)observeValueForKeyPath:(NSString *)keyPath
@@ -235,6 +295,7 @@
 		}
 		switch (status) {
 			case AVPlayerItemStatusReadyToPlay:
+				NSLog(@"AVPlayerItemStatusReadyToPlay, setting _state as stopped, returning duration");
 				[self setPlaybackState:stopped];
 				_connectionResult(@((int)(1000 * CMTimeGetSeconds([[_player currentItem] duration]))));
 				break;
@@ -248,6 +309,7 @@
 	}
     if (@available(iOS 10.0, *)) {
         if ([keyPath isEqualToString:@"timeControlStatus"]) {
+            NSLog(@"timeControlStatus update");
             AVPlayerTimeControlStatus status = AVPlayerTimeControlStatusPaused;
             NSNumber *statusNumber = change[NSKeyValueChangeNewKey];
             if ([statusNumber isKindOfClass:[NSNumber class]]) {
@@ -255,14 +317,42 @@
             }
             switch (status) {
                 case AVPlayerTimeControlStatusPaused:
-                    [self setPlaybackBufferingState:paused buffering:NO];
+                    NSLog(@"AVPlayerTimeControlStatusPaused");
+
+                    // new code
+                    // when pause is called in self stop, this gets triggered and sets state another time
+                    if (_state == stopped || _state == connecting || _buffering) {
+                      NSLog(@"AVPlayerTimeControlStatusPaused _state was stopped or connecting or buffering, ignoring");
+                    } else {
+                      NSLog(@"AVPlayerTimeControlStatusPaused _state was NOT stopped or was buffering, setting paused state and buffering to NO");
+                      [self setPlaybackBufferingState:paused buffering:NO];
+                    }
+                    // end new code
+
+                    // original code
+                    // [self setPlaybackBufferingState:paused buffering:NO];
+                    // end original code
                     break;
                 case AVPlayerTimeControlStatusWaitingToPlayAtSpecifiedRate:
+                    NSLog(@"AVPlayerTimeControlStatusWaitingToPlayAtSpecifiedRate");
                    if (_state != stopped) [self setPlaybackBufferingState:stopped buffering:YES];
                    else [self setPlaybackBufferingState:connecting buffering:YES];
                     break;
                 case AVPlayerTimeControlStatusPlaying:
-                    [self setPlaybackBufferingState:playing buffering:NO];
+                    // new code
+                    NSLog(@"AVPlayerTimeControlStatusPlaying");
+                    if (_state == stopped || _buffering) {
+                      NSLog(@"AVPlayerTimeControlStatusPlaying _state was stopped or _buffering, setting playing but buffering to YES");
+                      [self setPlaybackBufferingState:playing buffering:YES];
+                    } else {
+                      NSLog(@"AVPlayerTimeControlStatusPlaying _state was NOT stopped, setting buffering to NO");
+                      [self setPlaybackBufferingState:playing buffering:NO];
+                    }
+                    // end new code
+
+                    // original code
+                    // [self setPlaybackBufferingState:playing buffering:NO];
+                    // end original code
                     break;
             }
         }
@@ -274,11 +364,34 @@
 }
 
 - (void)play {
+	NSLog(@"JustAudio play");
 	// TODO: dynamically adjust the lag.
 	//int lag = 6;
 	//int start = [self getCurrentPosition];
+
+	// original code
+	// [_player play];
+  // if (!@available(iOS 10.0, *)) {[self setPlaybackState:playing];}
+	// end original code
+
+	// new code
 	[_player play];
-    if (!@available(iOS 10.0, *)) {[self setPlaybackState:playing];}
+	if (_state == stopped) {
+		NSLog(@"play called, _state was stopped, setting buffering to YES and playback state to playing");
+		_buffering = YES;
+		if (!@available(iOS 10.0, *)) {[self setPlaybackState:playing];}
+	} else if (_state == paused) {
+		NSLog(@"play called, _state was paused, setting playback state to playing");
+		if (!@available(iOS 10.0, *)) {[self setPlaybackState:playing];}
+	}  else if (_state == playing) {
+		NSLog(@"play called, _state was playing!");
+	} else {
+		NSLog(@"PLAY WAS CALLED WITH SOMETHING ELSE OHHH NOOOOOOOOO");
+		if (!@available(iOS 10.0, *)) {[self setPlaybackState:playing];}
+	}
+	// end new code
+
+
 	// TODO: convert this Android code to iOS
 	/* if (endDetector != null) { */
 	/* 	handler.removeCallbacks(endDetector); */
@@ -301,24 +414,86 @@
 }
 
 - (void)pause {
+	NSLog(@"JustAudio pause");
 	[_player pause];
     if (!@available(iOS 10.0, *)) {[self setPlaybackState:paused];}
 }
 
 - (void)stop {
+	NSLog(@"JustAudio stop");
+	// TODO: Dmitry - move set stopped up out of completionHandler again?
+	// also, this call to pause likely triggers that AVPlayerTimeControl..Paused and broadcasts paused before this stopped!
+
+	// new code
+	// // setting state first so AVPlayerTimeControl pause handler triggers with _state == stopped
+	// // [self setPlaybackBufferingState:stopped buffering:NO];
+
+	// [self setPlaybackState:stopped];
+	// NSLog(@"JustAudio stop pausing player");
+	// [_player pause];
+
+	// NSLog(@"JustAudio stop about to seekToTime 0");
+	// [_player seekToTime:CMTimeMake(0, 1000)
+	//   completionHandler:^(BOOL finished) {
+	// 	  NSLog(@"stop seekTo 0 time completionHandler");
+	// 	//   if (!@available(iOS 10.0, *)) {[self setPlaybackState:stopped];}
+	// 	//   [self setPlaybackState:stopped];
+	//   }];
+	// end new code
+
+	// newer code
+	NSLog(@"JustAudio stop setting _state to stopped and pausing player");
+	_state = stopped;
 	[_player pause];
-	[_player seekToTime:CMTimeMake(0, 1000)
-	  completionHandler:^(BOOL finished) {
-		  [self setPlaybackBufferingState:stopped buffering:NO];
-	  }];
+
+	// NSLog(@"JustAudio stop dispatching background thread for _player seekToTime 0");
+	// dispatch_async(dispatch_get_global_queue( DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^(void){
+		// NSLog(@"JustAudio stop dispatched background thread for _player seekToTime 0");
+		NSLog(@"JustAudio stop about to seekToTime 0");
+		[_player seekToTime:CMTimeMake(0, 1000)
+			completionHandler:^(BOOL finished) {
+				NSLog(@"JustAudio stop _player seekToTime 0 completionHandler");
+				[self setPlaybackBufferingState:stopped buffering:NO];
+			}];
+	// });
+	// end newer code
+
+	// original code
+	// [_player pause];
+	// [_player seekToTime:CMTimeMake(0, 1000)
+	//   completionHandler:^(BOOL finished) {
+	// 	  [self setPlaybackBufferingState:stopped buffering:NO];
+	//   }];
+	// end original code
 }
 
 - (void)complete {
+	NSLog(@"JustAudio complete");
+	// new code
+	// this doesn't work, if next track takes long to load, for some reason UI doesn't get updated with skipToNext
+	// [self setPlaybackBufferingState:completed buffering:NO];
+	// _state = stopped;
 	[_player pause];
-	[_player seekToTime:CMTimeMake(0, 1000)
-	  completionHandler:^(BOOL finished) {
-		  [self setPlaybackBufferingState:completed buffering:NO];
-	  }];
+
+	// NSLog(@"JustAudio complete dispatching background thread for _player seekToTime 0");
+	// dispatch_async(dispatch_get_global_queue( DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^(void){
+	//   NSLog(@"JustAudio complete dispatched background thread for _player seekToTime 0");
+		[_player seekToTime:CMTimeMake(0, 1000)
+			completionHandler:^(BOOL finished) {
+				NSLog(@"JustAudio complete _player seekToTime 0 completionHandler");
+				[self setPlaybackBufferingState:completed buffering:NO];
+			}
+		];
+	// });
+	// end new code
+
+	// original code
+	// [_player pause];
+	// [_player seekToTime:CMTimeMake(0, 1000)
+	//   completionHandler:^(BOOL finished) {
+	//     [self setPlaybackBufferingState:completed buffering:NO];
+	//   }];
+	// original code
 }
 
 - (void)setVolume:(float)volume {
@@ -346,6 +521,13 @@
 	_seekPos = position;
 	NSLog(@"seek. enter buffering");
 	_buffering = YES;
+
+	// new code
+	NSLog(@"JustAudio seek setting _buffering to YES and pausing player");
+	[_player pause];
+	// end new code
+
+
 	[self broadcastPlaybackEvent];
 	[_player seekToTime:CMTimeMake(position, 1000)
 	  completionHandler:^(BOOL finished) {
@@ -356,12 +538,21 @@
 
 - (void)onSeekCompletion:(FlutterResult)result {
 	_seekPos = -1;
-	_buffering = NO;
+
+	// original code
+	// _buffering = NO;
+	// end original code
+
+	// new code
+	NSLog(@"JustAudio onSeekCompletion, still buffering so not changing but calling _player play");
+	[_player play];
+	// end new code
 	[self broadcastPlaybackEvent];
 	result(nil);
 }
 
 - (void)dispose {
+	NSLog(@"JustAudio dispose");
 	if (_state != none) {
 		[self stop];
 		[self setPlaybackBufferingState:none buffering:NO];
