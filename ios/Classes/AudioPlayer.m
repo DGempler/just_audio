@@ -195,6 +195,11 @@
         if (@available(iOS 10.0, *)) {[_player removeObserver:self forKeyPath:@"timeControlStatus"];}
 		[[NSNotificationCenter defaultCenter] removeObserver:_endObserver];
 		_endObserver = 0;
+
+		[[NSNotificationCenter defaultCenter]
+			removeObserver:self
+			name:AVPlayerItemPlaybackStalledNotification
+			object:_player.currentItem];
 	}
 
 	AVPlayerItem *playerItem;
@@ -220,6 +225,13 @@
 				[self complete];
 			}
 	];
+
+	[[NSNotificationCenter defaultCenter]
+		addObserver:self
+		selector:@selector(playbackStalled:)
+		name:AVPlayerItemPlaybackStalledNotification
+		object:playerItem];
+
 	if (_player) {
 		// new code
 		//Dispatch to background Thread to prevent blocking UI
@@ -263,6 +275,12 @@
 
 }
 
+- (void)playbackStalled:(NSNotification *)notification {
+    NSLog(@"playbackStalled");
+	[self stop];
+	[self setPlaybackState:error];
+}
+
 - (void)observeValueForKeyPath:(NSString *)keyPath
 		ofObject:(id)object
 		change:(NSDictionary<NSString *,id> *)change
@@ -281,6 +299,9 @@
 				break;
 			case AVPlayerItemStatusFailed:
 				NSLog(@"AVPlayerItemStatusFailed");
+				NSLog(@" error => %@ ", _player.currentItem.error );
+				[self stop];
+				[self setPlaybackState:error];
 				_connectionResult(nil);
 				break;
 			case AVPlayerItemStatusUnknown:
@@ -408,10 +429,14 @@
 	[_player pause];
 
 	// dispatch_async(dispatch_get_global_queue( DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^(void){
-		[_player seekToTime:CMTimeMake(0, 1000)
-			completionHandler:^(BOOL finished) {
-				[self setPlaybackBufferingState:stopped buffering:NO];
-			}];
+		if (_player.status == AVPlayerItemStatusReadyToPlay) {
+			[_player seekToTime:CMTimeMake(0, 1000)
+				completionHandler:^(BOOL finished) {
+					[self setPlaybackBufferingState:stopped buffering:NO];
+				}];
+		} else {
+			NSLog(@"player.status was not AVPlayerItemStatusReadyToPlay on stop");
+		}
 	// });
 	// end newer code
 
