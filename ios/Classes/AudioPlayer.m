@@ -238,9 +238,7 @@
 			usingBlock:^(NSNotification* note) {
 				NSLog(@"Reached play end time");
 				if (position != duration) {
-					_stalled = NO;
-					[self stop];
-					[self setPlaybackState:error];
+					[self setError];
 				} else {
 					[self complete];
 				}
@@ -308,9 +306,7 @@
     NSLog(@"playerItemFailedToPlayToEndTime");
     NSError *error = notification.userInfo[AVPlayerItemFailedToPlayToEndTimeErrorKey];
 	NSLog(@" error => %@ ", error );
-	_stalled = NO;
-	[self stop];
-	[self setPlaybackState:error];
+	[self setError];
 }
 
 - (void)observeValueForKeyPath:(NSString *)keyPath
@@ -331,9 +327,7 @@
 			case AVPlayerItemStatusFailed:
 				NSLog(@"AVPlayerItemStatusFailed");
 				NSLog(@" error => %@ ", _player.currentItem.error );
-				_stalled = NO;
-				[self stop];
-				[self setPlaybackState:error];
+				[self setError];
 				_connectionResult(nil);
 				break;
 			case AVPlayerItemStatusUnknown:
@@ -570,6 +564,12 @@
 	// end new code
 	[self broadcastPlaybackEvent];
 	result(nil);
+}
+
+- (void)setError {
+	_stalled = NO;
+	[self stop];
+	[self setPlaybackState:error];
 }
 
 - (void)dispose {
