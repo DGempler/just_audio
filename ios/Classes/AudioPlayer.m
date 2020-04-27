@@ -167,6 +167,10 @@
 	}
 }
 
+- (int)getCurrentItemDuration {
+	return (int)(1000 * CMTimeGetSeconds([[_player currentItem] duration]));
+}
+
 - (void)setPlaybackState:(enum PlaybackState)state {
 	//enum PlaybackState oldState = _state;
 	_state = state;
@@ -233,7 +237,13 @@
 			     queue:nil
 			usingBlock:^(NSNotification* note) {
 				NSLog(@"Reached play end time");
-				[self complete];
+				if (position != duration) {
+					_stalled = NO;
+					[self stop];
+					[self setPlaybackState:error];
+				} else {
+					[self complete];
+				}
 			}
 	];
 
@@ -298,6 +308,7 @@
     NSLog(@"playerItemFailedToPlayToEndTime");
     NSError *error = notification.userInfo[AVPlayerItemFailedToPlayToEndTimeErrorKey];
 	NSLog(@" error => %@ ", error );
+	_stalled = NO;
 	[self stop];
 	[self setPlaybackState:error];
 }
@@ -320,6 +331,7 @@
 			case AVPlayerItemStatusFailed:
 				NSLog(@"AVPlayerItemStatusFailed");
 				NSLog(@" error => %@ ", _player.currentItem.error );
+				_stalled = NO;
 				[self stop];
 				[self setPlaybackState:error];
 				_connectionResult(nil);
