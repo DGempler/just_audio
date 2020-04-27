@@ -15,6 +15,7 @@
 	int _seekPos;
 	FlutterResult _connectionResult;
 	BOOL _buffering;
+	BOOL _stalled;
 	id _endObserver;
 	id _timeObserver;
 	BOOL _automaticallyWaitsToMinimizeStalling;
@@ -36,6 +37,7 @@
 	_player = nil;
 	_seekPos = -1;
 	_buffering = NO;
+	_stalled = NO;
 	_endObserver = 0;
 	_timeObserver = 0;
 	_automaticallyWaitsToMinimizeStalling = YES;
@@ -192,6 +194,7 @@
 
 	if (_player) {
 		[[_player currentItem] removeObserver:self forKeyPath:@"status"];
+		[[_player currentItem] removeObserver:self forKeyPath:@"playbackLikelyToKeepUp"];
         if (@available(iOS 10.0, *)) {[_player removeObserver:self forKeyPath:@"timeControlStatus"];}
 		[[NSNotificationCenter defaultCenter] removeObserver:_endObserver];
 		_endObserver = 0;
@@ -215,6 +218,9 @@
 		     forKeyPath:@"status"
 			options:NSKeyValueObservingOptionNew
 			context:nil];
+
+	[playerItem addObserver:self forKeyPath:@"playbackLikelyToKeepUp" options:NSKeyValueObservingOptionInitial | NSKeyValueObservingOptionNew context:nil];
+
 	// TODO: Add observer for _endObserver.
 	_endObserver = [[NSNotificationCenter defaultCenter]
 		addObserverForName:AVPlayerItemDidPlayToEndTimeNotification
@@ -277,15 +283,13 @@
 
 - (void)playbackStalled:(NSNotification *)notification {
     NSLog(@"playbackStalled");
-	[self stop];
-	[self setPlaybackState:error];
+	_stalled = YES;
 }
 
 - (void)observeValueForKeyPath:(NSString *)keyPath
 		ofObject:(id)object
 		change:(NSDictionary<NSString *,id> *)change
 		context:(void *)context {
-
 	if ([keyPath isEqualToString:@"status"]) {
 		AVPlayerItemStatus status = AVPlayerItemStatusUnknown;
 		NSNumber *statusNumber = change[NSKeyValueChangeNewKey];
@@ -308,6 +312,14 @@
 				break;
 		}
 	}
+
+	if ([keyPath isEqualToString:@"playbackLikelyToKeepUp"]) {
+		if (_stalled && _player.currentItem.playbackLikelyToKeepUp) {
+			_stalled = NO;
+			[self play];
+		}
+	}
+
     if (@available(iOS 10.0, *)) {
         if ([keyPath isEqualToString:@"timeControlStatus"]) {
             AVPlayerTimeControlStatus status = AVPlayerTimeControlStatusPaused;
@@ -317,10 +329,11 @@
             }
             switch (status) {
                 case AVPlayerTimeControlStatusPaused:
-
                     // new code
                     // when pause is called in self stop, this gets triggered and sets state another time
                     if (_state == stopped || _state == connecting || _buffering) {
+                    } else if (_stalled) {
+                        [self setPlaybackBufferingState:paused buffering:YES];
                     } else {
                       [self setPlaybackBufferingState:paused buffering:NO];
                     }
@@ -426,10 +439,14 @@
 
 	// newer code
 	_state = stopped;
+	_buffering = NO;
 	[_player pause];
 
 	// dispatch_async(dispatch_get_global_queue( DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^(void){
-		if (_player.status == AVPlayerItemStatusReadyToPlay) {
+		if (_stalled) {
+			_stalled = NO;
+			[self setPlaybackState:stopped];
+		} else if (_player.status == AVPlayerItemStatusReadyToPlay) {
 			[_player seekToTime:CMTimeMake(0, 1000)
 				completionHandler:^(BOOL finished) {
 					[self setPlaybackBufferingState:stopped buffering:NO];
