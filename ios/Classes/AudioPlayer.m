@@ -203,6 +203,11 @@
 			removeObserver:self
 			name:AVPlayerItemPlaybackStalledNotification
 			object:_player.currentItem];
+
+        [[NSNotificationCenter defaultCenter]
+			removeObserver:self
+			name:AVPlayerItemFailedToPlayToEndTimeNotification
+			object:_player.currentItem];
 	}
 
 	AVPlayerItem *playerItem;
@@ -237,6 +242,8 @@
 		selector:@selector(playbackStalled:)
 		name:AVPlayerItemPlaybackStalledNotification
 		object:playerItem];
+
+    [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(playerItemFailedToPlayToEndTime:) name:AVPlayerItemFailedToPlayToEndTimeNotification object:playerItem];
 
 	if (_player) {
 		// new code
@@ -284,6 +291,15 @@
 - (void)playbackStalled:(NSNotification *)notification {
     NSLog(@"playbackStalled");
 	_stalled = YES;
+}
+
+- (void) playerItemFailedToPlayToEndTime:(NSNotification *)notification
+{
+    NSLog(@"playerItemFailedToPlayToEndTime");
+    NSError *error = notification.userInfo[AVPlayerItemFailedToPlayToEndTimeErrorKey];
+	NSLog(@" error => %@ ", error );
+	[self stop];
+	[self setPlaybackState:error];
 }
 
 - (void)observeValueForKeyPath:(NSString *)keyPath
