@@ -237,6 +237,8 @@
 			     queue:nil
 			usingBlock:^(NSNotification* note) {
 				NSLog(@"Reached play end time");
+				int position = [self getCurrentPosition];
+				int duration = [self getCurrentItemDuration];
 				if (position != duration) {
 					[self setError];
 				} else {
