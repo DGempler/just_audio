@@ -239,7 +239,10 @@
 				NSLog(@"Reached play end time");
 				int position = [self getCurrentPosition];
 				int duration = [self getCurrentItemDuration];
-				if (position != duration) {
+				int allowedDiscrepancyMilliseconds = 200;
+				NSLog(@"AVPlayerItemDidPlayToEndTime position: %i", position);
+				NSLog(@"AVPlayerItemDidPlayToEndTime duration: %i", duration);
+				if ((position + allowedDiscrepancyMilliseconds) < duration) {
 					[self setError];
 				} else {
 					[self complete];
