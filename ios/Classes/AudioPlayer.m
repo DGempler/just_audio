@@ -197,103 +197,123 @@
 	// end new code
 
 	if (_player) {
-		[[_player currentItem] removeObserver:self forKeyPath:@"status"];
-		[[_player currentItem] removeObserver:self forKeyPath:@"playbackLikelyToKeepUp"];
-        if (@available(iOS 10.0, *)) {[_player removeObserver:self forKeyPath:@"timeControlStatus"];}
-		[[NSNotificationCenter defaultCenter] removeObserver:_endObserver];
+		@try {
+			if (@available(iOS 10.0, *)) {[_player removeObserver:self forKeyPath:@"timeControlStatus"];}
+			[[NSNotificationCenter defaultCenter] removeObserver:_endObserver];
+		} @catch (NSException *exception) {
+			NSLog(@"Exception thrown while removing _player observers");
+			NSLog(@"%@", exception.reason);
+		}
+
 		_endObserver = 0;
+	}
+
+	@try {
+		AVPlayerItem *playerItem;
+
+		//Allow iOs playing both external links and local files.
+		if ([url hasPrefix:@"file://"]) {
+			playerItem = [[AVPlayerItem alloc] initWithURL:[NSURL fileURLWithPath:[url substringFromIndex:7]]];
+		} else {
+			playerItem = [[AVPlayerItem alloc] initWithURL:[NSURL URLWithString:url]];
+		}
+
+		[playerItem addObserver:self
+				forKeyPath:@"status"
+				options:NSKeyValueObservingOptionNew
+				context:nil];
+
+		[playerItem addObserver:self forKeyPath:@"playbackLikelyToKeepUp" options:NSKeyValueObservingOptionInitial | NSKeyValueObservingOptionNew context:nil];
+
+		// TODO: Add observer for _endObserver.
+		_endObserver = [[NSNotificationCenter defaultCenter]
+			addObserverForName:AVPlayerItemDidPlayToEndTimeNotification
+					object:playerItem
+					queue:nil
+				usingBlock:^(NSNotification* note) {
+					NSLog(@"Reached play end time");
+					int position = [self getCurrentPosition];
+					int duration = [self getCurrentItemDuration];
+					int allowedDiscrepancyMilliseconds = 200;
+					NSLog(@"AVPlayerItemDidPlayToEndTime position: %i", position);
+					NSLog(@"AVPlayerItemDidPlayToEndTime duration: %i", duration);
+					if ((position + allowedDiscrepancyMilliseconds) < duration) {
+						[self setError];
+					} else {
+						[self complete];
+					}
+				}
+		];
 
 		[[NSNotificationCenter defaultCenter]
-			removeObserver:self
+			addObserver:self
+			selector:@selector(playbackStalled:)
 			name:AVPlayerItemPlaybackStalledNotification
-			object:_player.currentItem];
+			object:playerItem];
 
-        [[NSNotificationCenter defaultCenter]
-			removeObserver:self
-			name:AVPlayerItemFailedToPlayToEndTimeNotification
-			object:_player.currentItem];
-	}
+		[[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(playerItemFailedToPlayToEndTime:) name:AVPlayerItemFailedToPlayToEndTimeNotification object:playerItem];
 
-	AVPlayerItem *playerItem;
+		if (_player) {
+			// new code
+			//Dispatch to background Thread to prevent blocking UI
+			// dispatch_async(dispatch_get_global_queue( DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^(void){
 
-	//Allow iOs playing both external links and local files.
-	if ([url hasPrefix:@"file://"]) {
-		playerItem = [[AVPlayerItem alloc] initWithURL:[NSURL fileURLWithPath:[url substringFromIndex:7]]];
-	} else {
-		playerItem = [[AVPlayerItem alloc] initWithURL:[NSURL URLWithString:url]];
-	}
+				if (_player.currentItem) {
+					@try {
+						[[_player currentItem] removeObserver:self forKeyPath:@"status"];
+						[[_player currentItem] removeObserver:self forKeyPath:@"playbackLikelyToKeepUp"];
+						[[NSNotificationCenter defaultCenter]
+							removeObserver:self
+							name:AVPlayerItemPlaybackStalledNotification
+							object:_player.currentItem];
 
-	[playerItem addObserver:self
-		     forKeyPath:@"status"
+						[[NSNotificationCenter defaultCenter]
+							removeObserver:self
+							name:AVPlayerItemFailedToPlayToEndTimeNotification
+							object:_player.currentItem];
+					} @catch (NSException *exception) {
+						NSLog(@"Exception thrown while removing _player currentItem observers");
+						NSLog(@"%@", exception.reason);
+					}
+				}
+
+				[_player replaceCurrentItemWithPlayerItem:playerItem];
+			// });
+			// end new code
+
+			// original code
+			// [_player replaceCurrentItemWithPlayerItem:playerItem];
+			// end original code
+		} else {
+			_player = [[AVPlayer alloc] initWithPlayerItem:playerItem];
+		}
+		if (_timeObserver) {
+			[_player removeTimeObserver:_timeObserver];
+			_timeObserver = 0;
+		}
+		if (@available(iOS 10.0, *)) {
+			_player.automaticallyWaitsToMinimizeStalling = _automaticallyWaitsToMinimizeStalling;
+			[_player addObserver:self
+			forKeyPath:@"timeControlStatus"
 			options:NSKeyValueObservingOptionNew
 			context:nil];
-
-	[playerItem addObserver:self forKeyPath:@"playbackLikelyToKeepUp" options:NSKeyValueObservingOptionInitial | NSKeyValueObservingOptionNew context:nil];
-
-	// TODO: Add observer for _endObserver.
-	_endObserver = [[NSNotificationCenter defaultCenter]
-		addObserverForName:AVPlayerItemDidPlayToEndTimeNotification
-			    object:playerItem
-			     queue:nil
-			usingBlock:^(NSNotification* note) {
-				NSLog(@"Reached play end time");
-				int position = [self getCurrentPosition];
-				int duration = [self getCurrentItemDuration];
-				int allowedDiscrepancyMilliseconds = 200;
-				NSLog(@"AVPlayerItemDidPlayToEndTime position: %i", position);
-				NSLog(@"AVPlayerItemDidPlayToEndTime duration: %i", duration);
-				if ((position + allowedDiscrepancyMilliseconds) < duration) {
-					[self setError];
-				} else {
-					[self complete];
-				}
-			}
-	];
-
-	[[NSNotificationCenter defaultCenter]
-		addObserver:self
-		selector:@selector(playbackStalled:)
-		name:AVPlayerItemPlaybackStalledNotification
-		object:playerItem];
-
-    [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(playerItemFailedToPlayToEndTime:) name:AVPlayerItemFailedToPlayToEndTimeNotification object:playerItem];
-
-	if (_player) {
-		// new code
-		//Dispatch to background Thread to prevent blocking UI
-		// dispatch_async(dispatch_get_global_queue( DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^(void){
-			[_player replaceCurrentItemWithPlayerItem:playerItem];
-		// });
-		// end new code
-
-		// original code
-		// [_player replaceCurrentItemWithPlayerItem:playerItem];
-		// end original code
-	} else {
-		_player = [[AVPlayer alloc] initWithPlayerItem:playerItem];
-	}
-	if (_timeObserver) {
-		[_player removeTimeObserver:_timeObserver];
-		_timeObserver = 0;
-	}
-	if (@available(iOS 10.0, *)) {
-		_player.automaticallyWaitsToMinimizeStalling = _automaticallyWaitsToMinimizeStalling;
-        [_player addObserver:self
-        forKeyPath:@"timeControlStatus"
-           options:NSKeyValueObservingOptionNew
-           context:nil];
-	}
-	// TODO: learn about the different ways to define weakSelf.
-	//__weak __typeof__(self) weakSelf = self;
-	//typeof(self) __weak weakSelf = self;
-	__unsafe_unretained typeof(self) weakSelf = self;
-	_timeObserver = [_player addPeriodicTimeObserverForInterval:CMTimeMake(200, 1000)
-		queue:nil
-		usingBlock:^(CMTime time) {
-			[weakSelf checkForDiscontinuity];
 		}
-	];
-	// We send result after the playerItem is ready in observeValueForKeyPath.
+		// TODO: learn about the different ways to define weakSelf.
+		//__weak __typeof__(self) weakSelf = self;
+		//typeof(self) __weak weakSelf = self;
+		__unsafe_unretained typeof(self) weakSelf = self;
+		_timeObserver = [_player addPeriodicTimeObserverForInterval:CMTimeMake(200, 1000)
+			queue:nil
+			usingBlock:^(CMTime time) {
+				[weakSelf checkForDiscontinuity];
+			}
+		];
+		// We send result after the playerItem is ready in observeValueForKeyPath.
+	} @catch (NSException *exception) {
+		NSLog(@"Exception thrown while initiating _player or playerItem & their observers");
+		NSLog(@"%@", exception.reason);
+		// [self setError];
+	}
 
 	// new code not indentend before
 	});
@@ -474,10 +494,16 @@
 			_stalled = NO;
 			[self setPlaybackState:stopped];
 		} else if (_player.status == AVPlayerItemStatusReadyToPlay) {
-			[_player seekToTime:CMTimeMake(0, 1000)
-				completionHandler:^(BOOL finished) {
-					[self setPlaybackBufferingState:stopped buffering:NO];
-				}];
+			@try {
+				[_player seekToTime:CMTimeMake(0, 1000)
+					completionHandler:^(BOOL finished) {
+						[self setPlaybackBufferingState:stopped buffering:NO];
+					}];
+			} @catch (NSException *exception) {
+				NSLog(@"Exception thrown while seeking to 0 on stop");
+				NSLog(@"%@", exception.reason);
+				// [self setError];
+			}
 		} else {
 			NSLog(@"player.status was not AVPlayerItemStatusReadyToPlay on stop");
 		}
